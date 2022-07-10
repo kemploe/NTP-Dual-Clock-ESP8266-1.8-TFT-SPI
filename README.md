@@ -33,6 +33,7 @@ On some Adafruit compatible 1.8" TFT SPI display, RESET is RST, A0 is DC, SDA is
 
 ## 4. Operation
 Upon start up the WiFiManager kicks in. If a saved WiFi configuration found it will configure NodeMCU as a WiFi Station (STA) and connect to the WiFi Access Point that is configured in the saved configuration. Otherwise it will configure NodeMCU as an Access Point (AP) with SSID: "ntpDualClock" and spawn a web page (WiFiManager portal) that you can connect to and configure using your Smartphone. Once the WiFi has been configured it will switch back to Station (STA) mode and start the clock.
+
 Once connected to the internet, it will start to synchronize and fetch the unix epoch from the configured NTP server. You do not need to manually adjust the date and time.
 
 ![](https://github.com/kemploe/NTP-Dual-Clock-ESP8266-1.8-TFT-SPI/blob/main/images/2022-07-10_151118-1.png)
