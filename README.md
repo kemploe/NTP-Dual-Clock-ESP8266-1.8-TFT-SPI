@@ -36,3 +36,6 @@ Upon start up the WiFiManager kicks in. If a saved WiFi configuration found it w
 Once connected to the internet, it will start to synchronize and fetch the unix epoch from the configured NTP server. You do not need to adjust the date and time manually.
 
 NTP sync status is displayed on the lower side of the display next to the date. NTP is displayed in green means it is good and synced in the last 1 hour, NTP is displayed in yellow means it is synced in the last 1 - 24 hour, NTP is displayed in red means it is out of sync.
+
+![](https://github.com/kemploe/NTP-Dual-Clock-ESP8266-1.8-TFT-SPI/blob/main/images/2022-07-10_151118-1.png)
+
