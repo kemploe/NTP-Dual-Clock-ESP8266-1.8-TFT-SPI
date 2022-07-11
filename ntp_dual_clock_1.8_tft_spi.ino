@@ -122,7 +122,7 @@ void setup()
     delay(3000);
 
   // set hostname
-  WiFi.hostname(new_hostname.c_str());
+  WiFi.setHostname(new_hostname.c_str());
 
 // Initializing NTP client
   timeClient.begin();
