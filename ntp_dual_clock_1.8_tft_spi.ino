@@ -100,7 +100,8 @@ void setup()
     tft.setCursor(38, 20);                         // move cursor to position (38, 20) pixel
     tft.print("WiFi connecting");
 
-    if (!wfm.autoConnect( "ntpDualClock" )) {
+    if (!wfm.autoConnect( "ntpDualClock" )) 
+    {
       // Did not connect, print error message
       Serial.println("failed to connect and hit timeout");
       tft.setCursor(40, 30);                       // move cursor to position (40, 30) pixel
@@ -126,7 +127,9 @@ void setup()
 
 // Initializing NTP client
   timeClient.begin();
-  delay (100);
+  delay(1000);
+  timeClient.update();                             // requesting time from NTP server
+  delay(2000);
 
   tft.fillScreen(BLACK);                           // blanking display
 
@@ -164,10 +167,6 @@ void setup()
 // MAIN LOOP
 void loop()
 {
-  timeClient.update();                             // requesting time from NTP server
-  utc_epoch = timeClient.getEpochTime();           // get UNIX Epoch time from NTP server
-  loc_epoch = utc_epoch + ( time_zone * 3600 );
-
   if ( second()%1 ) return;                        // update every 1 second
   events();                                        // update NTP
   LC();                                            // requesting Local Clock
@@ -178,6 +177,9 @@ void loop()
 // LOCAL CLOCK FUNCTION
 void LC()
 {
+  utc_epoch = timeClient.getEpochTime();           // get UNIX Epoch time from NTP server
+  loc_epoch = utc_epoch + ( time_zone * 3600 );    // calculate local epoch from unix epoch
+
   // print time (HH:MM)
   tft.setTextSize(3);                              // text size = 3
   tft.setCursor(26, 49);                           // move cursor to position (26, 49) pixel
