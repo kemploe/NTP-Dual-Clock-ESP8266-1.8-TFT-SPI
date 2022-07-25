@@ -3,12 +3,11 @@
 #include <Adafruit_ST7735.h>
 #include <ESP8266WiFi.h>
 #include <ezTime.h>
-#include <NTPClient.h>
 #include <WiFiManager.h>
 #include <WiFiUdp.h>
 
 // Adjustable parameters
-const int   time_zone = +7;                 // WIB (UTC + 7)
+const char   * t_zone = "Asia/Jakarta";     // see: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 const char * ntp_pool = "id.pool.ntp.org";  // NTP Server pool address
 const long ntp_update = 600000;             // NTP Client update interval in millisecond (ms)
 const int  duty_cycle = 72;                 // TFT brightness using PWM duty cycle (0-255)
@@ -24,9 +23,10 @@ static byte prev_loc_dow = 0;
 char utc_dow_array[7][10] = {"SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"};
 static byte prev_utc_dow = 0;
 
-// Elapsed time since 1 Jan 1970 in seconds
-unsigned long utc_epoch;
-unsigned long loc_epoch;
+Timezone my_tz;                              // local timezone variable
+time_t utc_time;                             // current & displayed UTC
+time_t loc_time;                             // current & displayed local time  
+
 
 // Pin assignment for PWM output to set TFT backlight brightness
 uint8_t led_pin = 5;           // TFT LED/BL    pin is connected to NodeMCU GPIO 5
@@ -64,26 +64,109 @@ Adafruit_ST7735 tft = Adafruit_ST7735(TFT_CS, TFT_A0, TFT_RST);
 #define BLUE        RGB(  0,   0, 255)
 #define GREEN       RGB(  0, 255,   0)
 
-#define SYNC_MARGINAL 3600             // yellow status if no sync for 1 hour
-#define SYNC_LOST     86400            // red status if no sync for 1 day
+#define SYNC_MARGINAL 3600                           // yellow status if no sync for 1 hour
+#define SYNC_LOST     86400                          // red status if no sync for 1 day
 
-// NTP client setup, this must be done before setup
-  int utc_offset = 0;
-  WiFiUDP ntpUDP;
-  NTPClient timeClient( ntpUDP, ntp_pool, utc_offset, ntp_update );
+// LOCAL CLOCK FUNCTION
+void LC()
+{
+  loc_time = my_tz.now();
+// print time (HH:MM)
+  tft.setTextSize(3);                                // text size = 3
+  tft.setCursor(26, 49);                             // move cursor to position (26, 49) pixel
+  tft.setTextColor(LIGHTGREY, BLACK);                // set text color to lightgrey and black background
+  tft.printf( "%02u:%02u", hour(loc_time), minute(loc_time) );
+
+// print time (:SS)
+  tft.setTextSize(2);                                // text size = 2
+  tft.setCursor(114, 56);                            // move cursor to position (114, 56) pixel
+  tft.printf( ":%02u", second(loc_time) );
+
+// print day of the week
+  if( prev_loc_dow != weekday(loc_time) )
+  {
+    prev_loc_dow = weekday(loc_time);
+    tft.fillRect(17, 3, 142, 19, BLACK);             // fill rectangle (x,y,w,h,color)
+    tft.setTextSize(2);                              // text size = 2
+    tft.setTextColor(CYAN, BLACK);                   // set text color to cyan and black background
+    tft.setCursor(x_pos[prev_loc_dow-1], 5);         // move cursor to position (dow, 5) pixel
+    tft.print( loc_dow_array[prev_loc_dow-1] );
+  }
+
+// print date (DD-MM-YYYY)
+  tft.setTextSize(2);                                // text size = 2
+  tft.setCursor(28, 28);                             // move cursor to position (28, 28) pixel
+  tft.setTextColor(YELLOW, BLACK);                   // set text color to yellow and black background
+  tft.printf( "%02u/%02u/%04u", day(loc_time), month(loc_time), year(loc_time) );
+}
+
+// UTC CLOCK FUNCTION
+void UC()
+{
+  utc_time = now();                                  // requesting actual time (now)
+// print time (HH:MM)
+  tft.setTextSize(3);                                // text size = 3
+  tft.setCursor(26, 102);                            // move cursor to position (26, 102) pixel
+  tft.setTextColor(LIGHTGREY, BLACK);                // set text color to lightgrey and black background
+  tft.printf( "%02u:%02u", hour(utc_time), minute(utc_time) );
+
+// print time (:SS)
+  tft.setTextSize(2);                                // text size = 2
+  tft.setCursor(114, 109);                           // move cursor to position (114, 109) pixel
+  tft.printf( ":%02u", second(utc_time) );
+
+// print day of the week
+  if( prev_utc_dow != weekday(utc_time) )
+  {
+    prev_utc_dow = weekday(utc_time);
+    tft.setTextSize(1);                              // text size = 1
+    tft.setTextColor(CYAN, BLACK);                   // set text color to cyan and black background
+    tft.setCursor(27, 87);                           // move cursor to position (27, 87) pixel
+    tft.print( utc_dow_array[prev_utc_dow-1] );
+  }
+
+// print date (MM-DD-YYYY)
+  tft.setTextSize(1);                                // text size = 1
+  tft.setCursor(53, 87);                             // move cursor to position (53, 87) pixel
+  tft.setTextColor(YELLOW, BLACK);                   // set text color to yellow and black background
+  tft.printf( "%02u-%02u-%04u", month(utc_time), day(utc_time), year(utc_time) );
+}
+
+// NTP Clock Status Function - inspired by W8BH - Bruce E. Hall - https://github.com/bhall66/NTP-clock
+void NCS()
+{
+  int sync_result, sync_age;
+
+  if ( second()%30 ) return;                         // update every 30 seconds 
+  sync_age = now() - lastNtpUpdateTime();            // how long since last sync?
+  if ( sync_age < SYNC_MARGINAL )                    // time is good & in sync
+    sync_result = GREEN;
+  else 
+  if ( sync_age < SYNC_LOST )                        // sync is 1-24 hours old
+    sync_result = YELLOW;
+  else 
+    sync_result = RED;                               // time is stale!
+
+  // display sync_result
+  tft.setTextSize(1);                                // text size = 1
+  tft.setCursor(120, 87);                            // move cursor to position (120, 87) pixel
+  tft.setTextColor(sync_result, BLACK);              // set text color to 'sync_result' and black background
+  tft.print( "NTP" );
+  tft.fillRoundRect(142, 87, 7, 7, 0, sync_result);  // show clock status color as a 'sync_result'
+}
 
 // SETUP
 void setup()
 {
   // initializing 1.8" TFT display
-  analogWrite(led_pin, duty_cycle);   // set display brightness
-  tft.initR(INITR_BLACKTAB);          // initialize TFT display with ST7735 chip
-  tft.setRotation(display_ori);       // set display orientation
-  tft.fillScreen(BLACK);              // blanking display
+  analogWrite(led_pin, duty_cycle);                  // set display brightness
+  tft.initR(INITR_BLACKTAB);                         // initialize TFT display with ST7735 chip
+  tft.setRotation(display_ori);                      // set display orientation
+  tft.fillScreen(BLACK);                             // blanking display
 
   // initializing Serial Port
-  Serial.begin(115200);               // set serial port speed
-  delay (3000);                       // 3 seconds delay
+  Serial.begin(115200);                              // set serial port speed
+  delay (3000);                                      // 3 seconds delay
 
   // WiFiManager, Local initialization. 
   // Once its business is done, there is no need to keep it around
@@ -94,7 +177,7 @@ void setup()
 
     // reset settings - wipe stored credentials for testing
     // these are stored by the esp library
-    wfm.resetSettings();
+    // wfm.resetSettings();
 
     Serial.println("WiFi connecting");
     tft.setCursor(38, 20);                         // move cursor to position (38, 20) pixel
@@ -105,7 +188,7 @@ void setup()
       // Did not connect, print error message
       Serial.println("failed to connect and hit timeout");
       tft.setCursor(40, 30);                       // move cursor to position (40, 30) pixel
-      tft.print("failed to connect and hit timeout");
+      tft.print("failed to connect");
    
       // Reset and try again
       ESP.restart();
@@ -125,15 +208,17 @@ void setup()
   // set hostname
   WiFi.setHostname(new_hostname.c_str());
 
-// Initializing NTP client
-  timeClient.begin();
-  delay(1000);
-  timeClient.update();                             // requesting time from NTP server
-  delay(2000);
+  // priming eztime library
+  setServer(ntp_pool);                             // set NTP server
+  while (timeStatus()!=timeSet)                    // wait until time synced
+  {
+    events();                                      // allow ezTime to work
+    delay(1000);
+  }
+  my_tz.setLocation(t_zone);
 
+  // static frame for local time
   tft.fillScreen(BLACK);                           // blanking display
-
-  // local clock frame
   tft.drawRect(0, 0, tft.width(), 76, WHITE);      // draw rectangle (x, y, w, h, color)
   tft.fillRect(0, 0, 16, 76, WHITE);
   tft.fillRect(3, 12, 10, 52, BLACK);
@@ -150,7 +235,7 @@ void setup()
   tft.setCursor(5, 54);                            // move cursor to position (5, 54) pixel
   tft.print( "L" );
   
-  // utc clock frame
+  // static frame for UTC
   tft.drawRect(0, 79, tft.width(), 49, BLUE);      // draw rectangle (x, y, w, h, color)
   tft.setTextSize(1);                              // text size = 1
   tft.setTextColor(WHITE, BLACK);                  // set text color to cyan and black background
@@ -167,100 +252,10 @@ void setup()
 // MAIN LOOP
 void loop()
 {
-  if ( second()%1 ) return;                        // update every 1 second
-  events();                                        // update NTP
   LC();                                            // requesting Local Clock
   UC();                                            // requesting UTC Clock
   NCS();                                           // requesting NTP Clock Status
-}
-
-// LOCAL CLOCK FUNCTION
-void LC()
-{
-  utc_epoch = timeClient.getEpochTime();           // get UNIX Epoch time from NTP server
-  loc_epoch = utc_epoch + ( time_zone * 3600 );    // calculate local epoch from unix epoch
-
-  // print time (HH:MM)
-  tft.setTextSize(3);                              // text size = 3
-  tft.setCursor(26, 49);                           // move cursor to position (26, 49) pixel
-  tft.setTextColor(LIGHTGREY, BLACK);              // set text color to lightgrey and black background
-  tft.printf( "%02u:%02u", hour(loc_epoch), minute(loc_epoch) );
-
-  // print time (:SS)
-  tft.setTextSize(2);                              // text size = 2
-  tft.setCursor(114, 56);                          // move cursor to position (114, 56) pixel
-  tft.printf( ":%02u", second(loc_epoch) );
-
-  // print day of the week
-  if( prev_loc_dow != weekday(loc_epoch) )
-  {
-    prev_loc_dow = weekday(loc_epoch);
-    tft.fillRect(17, 3, 142, 19, BLACK);           // fill rectangle (x,y,w,h,color)
-    tft.setTextSize(2);                            // text size = 2
-    tft.setTextColor(CYAN, BLACK);                 // set text color to cyan and black background
-    tft.setCursor(x_pos[prev_loc_dow-1], 5);       // move cursor to position (dow, 5) pixel
-    tft.print( loc_dow_array[prev_loc_dow-1] );
-  }
-
-  // print date (DD-MM-YYYY)
-  tft.setTextSize(2);                              // text size = 2
-  tft.setCursor(28, 28);                           // move cursor to position (28, 28) pixel
-  tft.setTextColor(YELLOW, BLACK);                 // set text color to yellow and black background
-  tft.printf( "%02u/%02u/%04u", day(loc_epoch), month(loc_epoch), year(loc_epoch) );
-}
-
-// UTC CLOCK FUNCTION
-void UC()
-{
-  // print time (HH:MM)
-  tft.setTextSize(3);                              // text size = 3
-  tft.setCursor(26, 102);                          // move cursor to position (26, 102) pixel
-  tft.setTextColor(LIGHTGREY, BLACK);              // set text color to lightgrey and black background
-  tft.printf( "%02u:%02u", hour(utc_epoch), minute(utc_epoch) );
-
-  // print time (:SS)
-  tft.setTextSize(2);                              // text size = 2
-  tft.setCursor(114, 109);                         // move cursor to position (114, 109) pixel
-  tft.printf( ":%02u", second(utc_epoch) );
-
-  // print day of the week
-  if( prev_utc_dow != weekday(utc_epoch) )
-  {
-    prev_utc_dow = weekday(utc_epoch);
-    tft.setTextSize(1);                            // text size = 1
-    tft.setTextColor(CYAN, BLACK);                 // set text color to cyan and black background
-    tft.setCursor(27, 87);                         // move cursor to position (27, 87) pixel
-    tft.print( utc_dow_array[prev_utc_dow-1] );
-  }
-
-  // print date (MM-DD-YYYY)
-  tft.setTextSize(1);                              // text size = 1
-  tft.setCursor(53, 87);                           // move cursor to position (53, 87) pixel
-  tft.setTextColor(YELLOW, BLACK);                 // set text color to yellow and black background
-  tft.printf( "%02u-%02u-%04u", month(utc_epoch), day(utc_epoch), year(utc_epoch) );
-}
-
-// NTP Clock Status Function - inspired by W8BH - Bruce E. Hall - https://github.com/bhall66/NTP-clock
-void NCS()
-{
-  int sync_result, sync_age;
-
-  if ( second()%10 ) return;                              // update every 10 seconds 
-  sync_age = now() - lastNtpUpdateTime();                 // how long since last sync?
-  if ( sync_age < SYNC_MARGINAL )                         // time is good & in sync
-    sync_result = GREEN;
-  else 
-  if ( sync_age < SYNC_LOST )                             // sync is 1-24 hours old
-    sync_result = YELLOW;
-  else 
-    sync_result = RED;                                    // time is stale!
-
-  // display sync_result
-  tft.setTextSize(1);                                     // text size = 1
-  tft.setCursor(120, 87);                                 // move cursor to position (120, 87) pixel
-  tft.setTextColor(sync_result, BLACK);                   // set text color to 'sync_result' and black background
-  tft.print( "NTP" );
-  tft.fillRoundRect( 142, 87, 7, 7, 10, sync_result );    // show clock status color as a 'sync_result'
+  events();                                        // update NTP
 }
 
 // PROGRAM END
