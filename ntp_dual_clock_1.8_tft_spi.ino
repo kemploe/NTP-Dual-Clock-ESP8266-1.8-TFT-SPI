@@ -7,9 +7,8 @@
 #include <WiFiUdp.h>
 
 // Adjustable parameters
-const char   * t_zone = "Asia/Jakarta";     // see: https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
+const char   * t_zone = "Asia/Jakarta";     // See https://en.wikipedia.org/wiki/List_of_tz_database_time_zones
 const char * ntp_pool = "id.pool.ntp.org";  // NTP Server pool address
-const long ntp_update = 600000;             // NTP Client update interval in millisecond (ms)
 const int  duty_cycle = 72;                 // TFT brightness using PWM duty cycle (0-255)
 const int display_ori = 1;                  // TFT display orientation
 String   new_hostname = "ntpDualClock";
@@ -25,7 +24,7 @@ static byte prev_utc_dow = 0;
 
 Timezone my_tz;                              // local timezone variable
 time_t utc_time;                             // current & displayed UTC
-time_t loc_time;                             // current & displayed local time  
+time_t loc_time;                             // current & displayed local time
 
 
 // Pin assignment for PWM output to set TFT backlight brightness
@@ -212,7 +211,7 @@ void setup()
   setServer(ntp_pool);                             // set NTP server
   while (timeStatus()!=timeSet)                    // wait until time synced
   {
-    events();                                      // allow ezTime to work
+    events();                                      // allow ezTime to sync
     delay(1000);
   }
   my_tz.setLocation(t_zone);
