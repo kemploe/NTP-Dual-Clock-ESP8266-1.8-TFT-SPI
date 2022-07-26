@@ -58,7 +58,7 @@ Once connected to the internet, it will start to synchronize and fetch the unix 
 
 ![](https://github.com/kemploe/NTP-Dual-Clock-ESP8266-1.8-TFT-SPI/blob/main/images/2022-07-10_151118-1.png)
 
-NTP sync status is displayed on the upper left side display inside the vertical rectangle.
+NTP sync status is displayed on the right inside the lower frame as shown in the above picture.
 
 NTP is displayed in green indicates it is good and synced in the last 1 hour.
 
